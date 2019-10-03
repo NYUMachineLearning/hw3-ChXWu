@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r, include=FALSE}
+library(caret)
+library(ROCR)
+library(pROC)
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(ggfortify)
+library(glmnet)
+library(tidyverse)
+```
+
+# Homework
+
+## Lasso
+
+$$Lasso Regression=\sum_{i=1}^{n}(y_i - w_0 - \sum_{j=1}^{p}w_jx_{ij})^2 + \lambda\sum_{j=1}^p|w_j|$$
+2. Create and train model 
+```{r}
+train_size <- floor(0.75 * nrow(airquality))
+set.seed(543)
+train_pos <- sample(seq_len(nrow(airquality)), size = train_size)
+train_regression <- airquality[train_pos,-c(1,2)]
+test_regression <- airquality[-train_pos,-c(1,2)]
+
+dim(train_regression)
+dim(test_regression)
+```
+
+```{r}
+ctrl =  trainControl(method = "boot", 15)
+
+Lasso_regression <- train(Temp ~ Wind + Month, data = train_regression,
+                          method = 'lasso', trControl= ctrl) 
+```
+
+Examine the residuals 
+```{r}
+lasso_test_pred <- predict(Lasso_regression, newdata = test_regression)
+
+#plot the predicted values vs the observed values
+plot_lasso_test_pred <- data.frame(Temp_test_pred = lasso_test_pred, 
+                                   Observed_Temp = test_regression$Temp)
+ggplot(data = plot_lasso_test_pred) +
+  geom_point(aes(x=Observed_Temp, y = Temp_test_pred)) + 
+  ggtitle("True Temp Value vs Predicted Temp Value Lasso Regression") +
+  theme_bw()
+
+#median residual value should be close to zero
+median(resid(Lasso_regression))
+```
+
+#Homework:
+
+1. Use the Breast Cancer dataset from the mlbench package, and predict whether the cancer is malignant or benign using one of the algorithms we learned about in class. Give some rationale as to why you chose this algorithm. Plot ROC curves, and confusion matrices. If you are choosing a hyperparameter like K or lambda, explain how and why you chose it. 
+
+```{r}
+#library
+library(mlbench)
+data(BreastCancer)
+BreastCancer <-na.omit(BreastCancer)
+#split into training and test set 
+train_size <- floor(0.75 * nrow(BreastCancer))
+set.seed(543)
+train_pos <- sample(seq_len(nrow(BreastCancer)), size = train_size)
+train_classifier <- BreastCancer[train_pos,]
+test_classifier <- BreastCancer[-train_pos,]
+dim(train_classifier)
+dim(test_classifier)
+```
+
+I am using logistic regression because there are only two classes(malignant or benign) and linear regression is pretty good for this situation
+```{r}
+#train
+train_classifier$Class <- factor(train_classifier$Class)
+test_classifier$Class <- factor(test_classifier$Class)
+
+ctrl <- trainControl(method = "repeatedcv", repeats = 15,classProbs = T,
+                     savePredictions = T)
+
+```
+
+```{r, warning=FALSE}
+#create model. logistic regression is a bionomial general linear model. 
+logistic_regression <- train(Class ~ Cl.thickness + Cell.size + Cell.shape +
+                               Marg.adhesion + Epith.c.size + Bare.nuclei + 
+                               Bl.cromatin + Normal.nucleoli + Mitoses, 
+                             data = train_classifier, 
+                             method = "glm", family= "binomial",trControl = ctrl)
+```
+
+```{r}
+#test
+#predict class using x
+logistic_regression_predict_class <- predict(logistic_regression, 
+                                             newdata = test_classifier)
+
+#confusion matrix
+confusionMatrix(logistic_regression_predict_class, 
+                reference = test_classifier$Class)
+
+```
+
+```{r}
+# plot ROC
+plot(x = roc(predictor = logistic_regression$pred$benign,
+             response = logistic_regression$pred$obs)$specificities, 
+     y = roc(predictor = logistic_regression$pred$benign, 
+             response = logistic_regression$pred$obs)$sensitivities,
+     col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity",
+     xlab = "Specificity")
+legend("bottomright", legend = paste("benign v versicolor --", 
+                                     roc(predictor = logistic_regression$pred$benign,
+                                         response = logistic_regression$pred$obs)$auc
+, sep = ""), col = c("blue"), fill = c("blue"))
+```
